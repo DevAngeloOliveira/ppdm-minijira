@@ -11,155 +11,146 @@ import {
   Modal,
   TextInput,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuthStore } from '../../src/store/auth';
-import { api } from '../../src/lib/api';
-
-interface Task {
-  id: number;
-  title: string;
-  description: string;
-  status: 'TODO' | 'DOING' | 'DONE';
-  priority: 'LOW' | 'MEDIUM' | 'HIGH';
-  assigned_to: number | null;
-  assignee_name: string | null;
-}
-
-const statusColors = {
-  TODO: '#6b7280',
-  DOING: '#2563eb',
-  DONE: '#16a34a',
-};
-
-const statusLabels = {
-  TODO: 'A Fazer',
-  DOING: 'Em Progresso',
-  DONE: 'Concluído',
-};
-
-const priorityColors = {
-  LOW: '#6b7280',
-  MEDIUM: '#eab308',
-  HIGH: '#ef4444',
-};
+import { useTaskStore } from '../../src/store/tasks';
+import { useProjectStore } from '../../src/store/projects';
+import { 
+  Task,
+  TaskStatus, 
+  TaskPriority,
+  STATUS_LABELS, 
+  STATUS_COLORS,
+  PRIORITY_LABELS,
+  PRIORITY_COLORS,
+} from '../../src/types';
+import { ApiError } from '../../src/lib/api';
 
 export default function ProjectScreen() {
-  const { id } = useLocalSearchParams();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { token } = useAuthStore();
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { 
+    tasks, 
+    isLoading, 
+    loadTasks, 
+    createTask, 
+    changeStatus,
+    setFilters,
+    filters,
+  } = useTaskStore();
+  const { currentProject, loadProject } = useProjectStore();
+
   const [refreshing, setRefreshing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
-  const [newTaskPriority, setNewTaskPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH'>('MEDIUM');
-  const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
-
-  const loadTasks = async () => {
-    try {
-      const response = await api.get(`/projects/${id}/tasks?size=100`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setTasks(response.data.items);
-    } catch (error) {
-      console.error('Erro ao carregar tarefas:', error);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('MEDIUM');
+  const [creating, setCreating] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<TaskStatus | null>(null);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   useEffect(() => {
-    loadTasks();
-  }, []);
+    if (id) {
+      loadTasks(parseInt(id));
+      loadProject(parseInt(id));
+    }
+  }, [id]);
 
-  const onRefresh = useCallback(() => {
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    loadTasks();
-  }, []);
+    await loadTasks(parseInt(id!));
+    setRefreshing(false);
+  }, [id]);
 
   const handleCreateTask = async () => {
-    if (!newTaskTitle) {
+    if (!newTaskTitle.trim()) {
       Alert.alert('Erro', 'Digite o título da tarefa');
       return;
     }
 
+    setCreating(true);
     try {
-      await api.post(
-        `/projects/${id}/tasks`,
-        {
-          title: newTaskTitle,
-          description: newTaskDescription,
-          priority: newTaskPriority,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await createTask(parseInt(id!), {
+        title: newTaskTitle.trim(),
+        description: newTaskDescription.trim() || undefined,
+        priority: newTaskPriority,
+      });
       setShowCreateModal(false);
       setNewTaskTitle('');
       setNewTaskDescription('');
       setNewTaskPriority('MEDIUM');
-      loadTasks();
-    } catch (error: any) {
-      Alert.alert('Erro', error.response?.data?.detail || 'Erro ao criar tarefa');
+    } catch (error) {
+      const apiError = error as ApiError;
+      Alert.alert('Erro', apiError.detail);
+    } finally {
+      setCreating(false);
     }
   };
 
-  const handleChangeStatus = async (taskId: number, newStatus: string) => {
+  const handleChangeStatus = async (newStatus: TaskStatus) => {
+    if (!selectedTask) return;
     try {
-      await api.patch(
-        `/tasks/${taskId}/status`,
-        { status: newStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      loadTasks();
-    } catch (error: any) {
-      Alert.alert('Erro', error.response?.data?.detail || 'Erro ao atualizar status');
+      await changeStatus(selectedTask.id, newStatus);
+      setShowStatusModal(false);
+      setSelectedTask(null);
+    } catch (error) {
+      const apiError = error as ApiError;
+      Alert.alert('Erro', apiError.detail);
     }
   };
 
-  const showStatusOptions = (task: Task) => {
-    Alert.alert(
-      'Alterar Status',
-      'Selecione o novo status:',
-      [
-        { text: 'A Fazer', onPress: () => handleChangeStatus(task.id, 'TODO') },
-        { text: 'Em Progresso', onPress: () => handleChangeStatus(task.id, 'DOING') },
-        { text: 'Concluído', onPress: () => handleChangeStatus(task.id, 'DONE') },
-        { text: 'Cancelar', style: 'cancel' },
-      ]
-    );
+  const handleTaskPress = (task: Task) => {
+    // Navegar para a tela de detalhes da tarefa
+    router.push({
+      pathname: '/task/[taskId]',
+      params: { taskId: task.id.toString(), projectId: id },
+    });
   };
 
-  const filteredTasks = selectedStatus
-    ? tasks.filter((t) => t.status === selectedStatus)
-    : tasks;
+  const handleTaskLongPress = (task: Task) => {
+    setSelectedTask(task);
+    setShowStatusModal(true);
+  };
+
+  const handleFilterPress = (status: TaskStatus | null) => {
+    setSelectedStatus(status);
+    setFilters({ status: status || undefined });
+    // loadTasks usa os filtros do estado automaticamente
+    loadTasks(parseInt(id!));
+  };
 
   const renderTask = ({ item }: { item: Task }) => (
     <TouchableOpacity
       style={styles.taskCard}
-      onPress={() => showStatusOptions(item)}
+      onPress={() => handleTaskPress(item)}
+      onLongPress={() => handleTaskLongPress(item)}
     >
       <View style={styles.taskHeader}>
         <View
           style={[
             styles.statusBadge,
-            { backgroundColor: statusColors[item.status] + '20' },
+            { backgroundColor: STATUS_COLORS[item.status] + '20' },
           ]}
         >
+          <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[item.status] }]} />
           <Text
-            style={[styles.statusText, { color: statusColors[item.status] }]}
+            style={[styles.statusText, { color: STATUS_COLORS[item.status] }]}
           >
-            {statusLabels[item.status]}
+            {STATUS_LABELS[item.status]}
           </Text>
         </View>
         <View
           style={[
-            styles.priorityDot,
-            { backgroundColor: priorityColors[item.priority] },
+            styles.priorityBadge,
+            { backgroundColor: PRIORITY_COLORS[item.priority] + '20' },
           ]}
-        />
+        >
+          <Text style={[styles.priorityText, { color: PRIORITY_COLORS[item.priority] }]}>
+            {PRIORITY_LABELS[item.priority]}
+          </Text>
+        </View>
       </View>
       <Text style={styles.taskTitle}>{item.title}</Text>
       {item.description && (
@@ -167,17 +158,35 @@ export default function ProjectScreen() {
           {item.description}
         </Text>
       )}
-      {item.assignee_name && (
+      {item.assignee && (
         <View style={styles.assignee}>
-          <Ionicons name="person-outline" size={14} color="#6b7280" />
-          <Text style={styles.assigneeText}>{item.assignee_name}</Text>
+          <View style={styles.assigneeAvatar}>
+            <Text style={styles.assigneeAvatarText}>
+              {item.assignee.name[0].toUpperCase()}
+            </Text>
+          </View>
+          <Text style={styles.assigneeText}>{item.assignee.name}</Text>
         </View>
       )}
+      <View style={styles.taskFooter}>
+        <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+      </View>
     </TouchableOpacity>
   );
 
   return (
     <View style={styles.container}>
+      {/* Header com nome do projeto */}
+      {currentProject && (
+        <View style={styles.projectHeader}>
+          <Text style={styles.projectName}>{currentProject.name}</Text>
+          <Text style={styles.projectStats}>
+            {tasks.length} tarefa{tasks.length !== 1 ? 's' : ''}
+          </Text>
+        </View>
+      )}
+
+      {/* Filtros de status */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -186,35 +195,35 @@ export default function ProjectScreen() {
       >
         <TouchableOpacity
           style={[styles.filterButton, !selectedStatus && styles.filterButtonActive]}
-          onPress={() => setSelectedStatus(null)}
+          onPress={() => handleFilterPress(null)}
         >
           <Text style={[styles.filterText, !selectedStatus && styles.filterTextActive]}>
             Todas
           </Text>
         </TouchableOpacity>
-        {Object.entries(statusLabels).map(([key, label]) => (
+        {(['TODO', 'DOING', 'DONE'] as TaskStatus[]).map((status) => (
           <TouchableOpacity
-            key={key}
+            key={status}
             style={[
               styles.filterButton,
-              selectedStatus === key && styles.filterButtonActive,
+              selectedStatus === status && styles.filterButtonActive,
             ]}
-            onPress={() => setSelectedStatus(key)}
+            onPress={() => handleFilterPress(status)}
           >
             <Text
               style={[
                 styles.filterText,
-                selectedStatus === key && styles.filterTextActive,
+                selectedStatus === status && styles.filterTextActive,
               ]}
             >
-              {label}
+              {STATUS_LABELS[status]}
             </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
       <FlatList
-        data={filteredTasks}
+        data={tasks}
         renderItem={renderTask}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.list}
@@ -222,12 +231,19 @@ export default function ProjectScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         ListEmptyComponent={
-          !loading ? (
+          !isLoading ? (
             <View style={styles.empty}>
               <Ionicons name="checkbox-outline" size={64} color="#d1d5db" />
               <Text style={styles.emptyText}>Nenhuma tarefa encontrada</Text>
+              <Text style={styles.emptySubtext}>
+                Toque no botão + para criar uma nova tarefa
+              </Text>
             </View>
-          ) : null
+          ) : (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#2563eb" />
+            </View>
+          )
         }
       />
 
@@ -235,6 +251,7 @@ export default function ProjectScreen() {
         <Ionicons name="add" size={28} color="#fff" />
       </TouchableOpacity>
 
+      {/* Modal de criar tarefa */}
       <Modal visible={showCreateModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -245,56 +262,112 @@ export default function ProjectScreen() {
               </TouchableOpacity>
             </View>
 
+            <Text style={styles.inputLabel}>Título *</Text>
             <TextInput
               style={styles.input}
-              placeholder="Título"
+              placeholder="Digite o título da tarefa"
+              placeholderTextColor="#9ca3af"
               value={newTaskTitle}
               onChangeText={setNewTaskTitle}
             />
 
+            <Text style={styles.inputLabel}>Descrição</Text>
             <TextInput
               style={[styles.input, styles.textArea]}
-              placeholder="Descrição"
+              placeholder="Descrição da tarefa (opcional)"
+              placeholderTextColor="#9ca3af"
               value={newTaskDescription}
               onChangeText={setNewTaskDescription}
               multiline
               numberOfLines={3}
+              textAlignVertical="top"
             />
 
-            <Text style={styles.label}>Prioridade</Text>
+            <Text style={styles.inputLabel}>Prioridade</Text>
             <View style={styles.priorityOptions}>
-              {(['LOW', 'MEDIUM', 'HIGH'] as const).map((p) => (
+              {(['LOW', 'MEDIUM', 'HIGH'] as TaskPriority[]).map((p) => (
                 <TouchableOpacity
                   key={p}
                   style={[
                     styles.priorityOption,
                     newTaskPriority === p && styles.priorityOptionActive,
+                    newTaskPriority === p && { borderColor: PRIORITY_COLORS[p] },
                   ]}
                   onPress={() => setNewTaskPriority(p)}
                 >
                   <View
                     style={[
                       styles.priorityDot,
-                      { backgroundColor: priorityColors[p] },
+                      { backgroundColor: PRIORITY_COLORS[p] },
                     ]}
                   />
                   <Text
                     style={[
-                      styles.priorityText,
-                      newTaskPriority === p && styles.priorityTextActive,
+                      styles.priorityOptionText,
+                      newTaskPriority === p && { color: PRIORITY_COLORS[p], fontWeight: '600' },
                     ]}
                   >
-                    {p === 'LOW' ? 'Baixa' : p === 'MEDIUM' ? 'Média' : 'Alta'}
+                    {PRIORITY_LABELS[p]}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <TouchableOpacity style={styles.createButton} onPress={handleCreateTask}>
-              <Text style={styles.createButtonText}>Criar Tarefa</Text>
+            <TouchableOpacity 
+              style={[styles.createButton, creating && styles.buttonDisabled]} 
+              onPress={handleCreateTask}
+              disabled={creating}
+            >
+              {creating ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.createButtonText}>Criar Tarefa</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      {/* Modal de alteração de status */}
+      <Modal visible={showStatusModal} animationType="fade" transparent>
+        <TouchableOpacity
+          style={styles.statusModalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            setShowStatusModal(false);
+            setSelectedTask(null);
+          }}
+        >
+          <View style={styles.statusModalContent}>
+            <Text style={styles.statusModalTitle}>Alterar Status</Text>
+            {selectedTask && (
+              <Text style={styles.statusModalSubtitle}>{selectedTask.title}</Text>
+            )}
+            {(['TODO', 'DOING', 'DONE'] as TaskStatus[]).map((status) => (
+              <TouchableOpacity
+                key={status}
+                style={[
+                  styles.statusOption,
+                  selectedTask?.status === status && styles.statusOptionActive,
+                ]}
+                onPress={() => handleChangeStatus(status)}
+              >
+                <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[status] }]} />
+                <Text
+                  style={[
+                    styles.statusOptionText,
+                    selectedTask?.status === status && { fontWeight: '600' },
+                  ]}
+                >
+                  {STATUS_LABELS[status]}
+                </Text>
+                {selectedTask?.status === status && (
+                  <Ionicons name="checkmark" size={20} color="#2563eb" />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -305,15 +378,32 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f9fafb',
   },
+  projectHeader: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  projectName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  projectStats: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 2,
+  },
   filterContainer: {
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
+    maxHeight: 56,
   },
   filterContent: {
     paddingHorizontal: 12,
     paddingVertical: 12,
-    gap: 8,
     flexDirection: 'row',
   },
   filterButton: {
@@ -336,6 +426,7 @@ const styles = StyleSheet.create({
   },
   list: {
     padding: 16,
+    flexGrow: 1,
   },
   taskCard: {
     backgroundColor: '#fff',
@@ -352,21 +443,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
   statusText: {
     fontSize: 12,
+    fontWeight: '500',
+  },
+  priorityBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  priorityText: {
+    fontSize: 11,
     fontWeight: '500',
   },
   priorityDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    marginRight: 6,
   },
   taskTitle: {
     fontSize: 16,
@@ -378,15 +487,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     marginBottom: 8,
+    lineHeight: 20,
   },
   assignee: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+  assigneeAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#2563eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  assigneeAvatarText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#fff',
   },
   assigneeText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#6b7280',
-    marginLeft: 4,
+    marginLeft: 8,
+  },
+  taskFooter: {
+    position: 'absolute',
+    right: 12,
+    top: '50%',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 64,
   },
   empty: {
     flex: 1,
@@ -396,8 +534,14 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
+    fontWeight: '500',
     color: '#6b7280',
     marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#9ca3af',
+    marginTop: 4,
   },
   fab: {
     position: 'absolute',
@@ -422,9 +566,10 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     padding: 24,
+    paddingBottom: 40,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -437,29 +582,30 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#111827',
   },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
   input: {
     backgroundColor: '#f9fafb',
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     fontSize: 16,
     marginBottom: 16,
+    color: '#111827',
   },
   textArea: {
-    height: 100,
+    minHeight: 80,
     textAlignVertical: 'top',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-    marginBottom: 8,
+    paddingTop: 14,
   },
   priorityOptions: {
     flexDirection: 'row',
-    gap: 12,
     marginBottom: 24,
   },
   priorityOption: {
@@ -471,29 +617,69 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+    marginHorizontal: 4,
   },
   priorityOptionActive: {
-    borderColor: '#2563eb',
-    backgroundColor: '#eff6ff',
+    backgroundColor: '#f9fafb',
   },
-  priorityText: {
+  priorityOptionText: {
     fontSize: 14,
     color: '#6b7280',
-    marginLeft: 6,
-  },
-  priorityTextActive: {
-    color: '#2563eb',
-    fontWeight: '500',
   },
   createButton: {
     backgroundColor: '#2563eb',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingVertical: 14,
     alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   createButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  statusModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  statusModalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    width: '100%',
+    maxWidth: 320,
+  },
+  statusModalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  statusModalSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  statusOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  statusOptionActive: {
+    backgroundColor: '#f3f4f6',
+  },
+  statusOptionText: {
+    flex: 1,
+    fontSize: 16,
+    color: '#374151',
   },
 });

@@ -9,13 +9,14 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useAuthStore } from '../src/store/auth';
-import { api } from '../src/lib/api';
+import { ApiError } from '../src/lib/api';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { setToken } = useAuthStore();
+  const { login } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,11 +29,11 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const response = await api.post('/auth/login', { email, password });
-      await setToken(response.data.access_token);
+      await login({ email, password });
       router.replace('/(tabs)');
-    } catch (error: any) {
-      Alert.alert('Erro', error.response?.data?.detail || 'Erro ao fazer login');
+    } catch (error) {
+      const apiError = error as ApiError;
+      Alert.alert('Erro', apiError.detail || 'Erro ao fazer login');
     } finally {
       setLoading(false);
     }
@@ -44,37 +45,54 @@ export default function LoginScreen() {
       style={styles.container}
     >
       <View style={styles.content}>
-        <Text style={styles.title}>Mini Jira</Text>
-        <Text style={styles.subtitle}>Entre na sua conta</Text>
+        <View style={styles.logoContainer}>
+          <View style={styles.logo}>
+            <Text style={styles.logoText}>MJ</Text>
+          </View>
+          <Text style={styles.title}>Mini Jira</Text>
+          <Text style={styles.subtitle}>Gerencie seus projetos e tarefas</Text>
+        </View>
 
-        <TextInput
-          style={styles.input}
-          placeholder="Email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
+        <View style={styles.form}>
+          <Text style={styles.inputLabel}>Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Digite seu email"
+            placeholderTextColor="#9ca3af"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Senha"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+          <Text style={styles.inputLabel}>Senha</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Digite sua senha"
+            placeholderTextColor="#9ca3af"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
 
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleLogin}
-          disabled={loading}
+          <TouchableOpacity
+            style={[styles.button, loading && styles.buttonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Entrar</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity 
+          style={styles.linkContainer}
+          onPress={() => router.push('/register')}
         >
-          <Text style={styles.buttonText}>
-            {loading ? 'Entrando...' : 'Entrar'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity onPress={() => router.push('/register')}>
           <Text style={styles.link}>
             Não tem uma conta? <Text style={styles.linkBold}>Registre-se</Text>
           </Text>
@@ -94,47 +112,86 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
-  title: {
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  logo: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    backgroundColor: '#2563eb',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  logoText: {
     fontSize: 32,
     fontWeight: 'bold',
+    color: '#fff',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
     color: '#111827',
-    textAlign: 'center',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
     color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: 32,
+  },
+  form: {
+    marginBottom: 24,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
   },
   input: {
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#d1d5db',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
     fontSize: 16,
     marginBottom: 16,
+    color: '#111827',
   },
   button: {
     backgroundColor: '#2563eb',
-    borderRadius: 8,
-    paddingVertical: 14,
+    borderRadius: 12,
+    paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: 16,
+    marginTop: 8,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   buttonDisabled: {
-    opacity: 0.5,
+    opacity: 0.7,
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
+  linkContainer: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
   link: {
-    textAlign: 'center',
     color: '#6b7280',
+    fontSize: 14,
   },
   linkBold: {
     color: '#2563eb',

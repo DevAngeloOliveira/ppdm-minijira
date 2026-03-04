@@ -453,12 +453,12 @@ export default function TaskDetailScreen() {
                 <Ionicons name="close" size={20} color="#9ca3af" />
               </View>
               <Text style={styles.memberName}>Sem responsável</Text>
-              {!currentTask.assigned_to && (
+              {!currentTask?.assigned_to && (
                 <Ionicons name="checkmark" size={20} color="#2563eb" />
               )}
             </TouchableOpacity>
 
-            {currentProject?.members.map((member) => (
+            {currentProject?.members?.map((member) => (
               <TouchableOpacity
                 key={member.user_id}
                 style={styles.memberOption}
@@ -466,14 +466,14 @@ export default function TaskDetailScreen() {
               >
                 <View style={styles.memberAvatar}>
                   <Text style={styles.memberAvatarText}>
-                    {member.user.name[0].toUpperCase()}
+                    {member.user?.name?.[0]?.toUpperCase() || '?'}
                   </Text>
                 </View>
                 <View style={styles.memberInfo}>
-                  <Text style={styles.memberName}>{member.user.name}</Text>
-                  <Text style={styles.memberEmail}>{member.user.email}</Text>
+                  <Text style={styles.memberName}>{member.user?.name || 'Usuário'}</Text>
+                  <Text style={styles.memberEmail}>{member.user?.email || ''}</Text>
                 </View>
-                {currentTask.assigned_to === member.user_id && (
+                {currentTask?.assigned_to === member.user_id && (
                   <Ionicons name="checkmark" size={20} color="#2563eb" />
                 )}
               </TouchableOpacity>

@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { useRouter } from 'expo-router';
-import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Text, StatusBar } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../src/store/auth';
+import { colors, spacing, fontSize, borderRadius } from '../src/theme/colors';
 
 export default function Index() {
   const router = useRouter();
@@ -14,7 +16,7 @@ export default function Index() {
   useEffect(() => {
     if (!isLoading) {
       if (isAuthenticated) {
-        router.replace('/(tabs)');
+        router.replace('/(drawer)/dashboard');
       } else {
         router.replace('/login');
       }
@@ -23,11 +25,15 @@ export default function Index() {
 
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={colors.background.dark} />
       <View style={styles.logo}>
-        <Text style={styles.logoText}>MJ</Text>
+        <Ionicons name="layers" size={40} color={colors.primary} />
       </View>
-      <Text style={styles.title}>Mini Jira</Text>
-      <ActivityIndicator size="large" color="#2563eb" style={styles.loader} />
+      <Text style={styles.title}>
+        Mini<Text style={styles.titleAccent}>Jira</Text>
+      </Text>
+      <Text style={styles.subtitle}>Gerenciamento de projetos</Text>
+      <ActivityIndicator size="large" color={colors.primary} style={styles.loader} />
     </View>
   );
 }
@@ -37,29 +43,32 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    backgroundColor: colors.background.dark,
   },
   logo: {
     width: 80,
     height: 80,
-    borderRadius: 20,
-    backgroundColor: '#2563eb',
+    borderRadius: borderRadius.xl,
+    backgroundColor: colors.background.card,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  logoText: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#fff',
+    marginBottom: spacing.md,
   },
   title: {
-    fontSize: 24,
+    fontSize: fontSize.title,
     fontWeight: 'bold',
-    color: '#111827',
-    marginBottom: 24,
+    color: colors.text.primary,
+  },
+  titleAccent: {
+    color: colors.primary,
+  },
+  subtitle: {
+    fontSize: fontSize.md,
+    color: colors.text.secondary,
+    marginTop: spacing.xs,
   },
   loader: {
-    marginTop: 16,
+    marginTop: spacing.xl,
   },
 });
+

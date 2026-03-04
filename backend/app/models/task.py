@@ -1,10 +1,14 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Text, Index
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
 
 
 class TaskStatus(str, enum.Enum):
@@ -34,8 +38,8 @@ class Task(Base):
     priority = Column(Enum(TaskPriority), default=TaskPriority.MEDIUM)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utc_now)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     # Relationships
     project = relationship("Project", back_populates="tasks")
@@ -56,7 +60,7 @@ class TaskHistory(Base):
     old_value = Column(String(255), nullable=True)
     new_value = Column(String(255), nullable=True)
     changed_by = Column(Integer, ForeignKey("users.id"), nullable=False)
-    changed_at = Column(DateTime, default=datetime.utcnow)
+    changed_at = Column(DateTime(timezone=True), default=utc_now)
 
     # Relationships
     task = relationship("Task", back_populates="history")

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.project import ProjectRole
 
@@ -35,8 +35,7 @@ class ProjectMemberResponse(ProjectMemberBase):
     user_name: Optional[str] = None
     user_email: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProjectResponse(ProjectBase):
@@ -45,8 +44,7 @@ class ProjectResponse(ProjectBase):
     created_at: datetime
     members: List[ProjectMemberResponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProjectListResponse(BaseModel):

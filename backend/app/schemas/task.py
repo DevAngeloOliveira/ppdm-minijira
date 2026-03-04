@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.models.task import TaskStatus, TaskPriority, ActionType
 
@@ -40,8 +40,7 @@ class TaskResponse(TaskBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TaskListResponse(BaseModel):
@@ -61,5 +60,4 @@ class TaskHistoryResponse(BaseModel):
     changed_by_name: Optional[str] = None
     changed_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

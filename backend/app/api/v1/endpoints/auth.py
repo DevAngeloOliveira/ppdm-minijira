@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends
+"""
+Endpoints de autenticação - Refatorado com segurança aprimorada
+"""
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -11,14 +14,35 @@ router = APIRouter()
 
 @router.post("/register", response_model=UserResponse, status_code=201)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user."""
+    """
+    Registra um novo usuário.
+    
+    Validações:
+    - Email único e formato válido
+    - Senha forte (8+ chars, maiúscula, minúscula, número, especial)
+    """
     service = AuthService(db)
     user = service.register(user_data)
     return user
 
 
 @router.post("/login", response_model=Token)
-def login(login_data: LoginRequest, db: Session = Depends(get_db)):
-    """Authenticate user and return JWT token."""
+def login(
+    request: Request,
+    login_data: LoginRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Autentica usuário e retorna token JWT.
+    
+    Rate limited: 5 tentativas por minuto por IP
+    """
+    # Obter IP do cliente para rate limiting
+    client_ip = request.client.host if request.client else "unknown"
+    
     service = AuthService(db)
-    return service.authenticate(login_data.email, login_data.password)
+    return service.authenticate(
+        login_data.email,
+        login_data.password,
+        client_ip=client_ip
+    )

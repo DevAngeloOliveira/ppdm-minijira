@@ -1,53 +1,83 @@
+"""
+Serviço de tarefas - Refatorado com SOLID
+
+SRP: Responsabilidade única de gerenciar tarefas
+OCP: Extensível através de injeção de dependência
+LSP: Segue contratos de interface
+DIP: Depende de abstrações
+"""
 from typing import Tuple, List, Optional
 
 from sqlalchemy.orm import Session
-from fastapi import HTTPException, status
 
 from app.repositories.task_repository import TaskRepository, TaskHistoryRepository
 from app.repositories.project_repository import ProjectRepository, ProjectMemberRepository
 from app.models.task import Task, TaskHistory, TaskStatus, ActionType
 from app.schemas.task import TaskCreate, TaskUpdate, TaskStatusUpdate, TaskAssignmentUpdate
+from app.core.exceptions import (
+    TaskNotFoundError,
+    ProjectNotFoundError,
+    ProjectAccessDeniedError,
+    InvalidAssignmentError,
+)
+from app.core.validators import InputSanitizer
 
 
 class TaskService:
-    def __init__(self, db: Session):
+    """
+    Serviço de gerenciamento de tarefas - SRP
+    """
+    
+    def __init__(
+        self,
+        db: Session,
+        task_repo: Optional[TaskRepository] = None,
+        history_repo: Optional[TaskHistoryRepository] = None,
+        project_repo: Optional[ProjectRepository] = None,
+        member_repo: Optional[ProjectMemberRepository] = None
+    ):
         self.db = db
-        self.task_repo = TaskRepository(db)
-        self.history_repo = TaskHistoryRepository(db)
-        self.project_repo = ProjectRepository(db)
-        self.member_repo = ProjectMemberRepository(db)
+        # DIP: Permite injeção de dependência para testes
+        self.task_repo = task_repo or TaskRepository(db)
+        self.history_repo = history_repo or TaskHistoryRepository(db)
+        self.project_repo = project_repo or ProjectRepository(db)
+        self.member_repo = member_repo or ProjectMemberRepository(db)
 
     def _check_project_access(self, project_id: int, user_id: int) -> None:
+        """Verifica acesso ao projeto - DRY principle"""
         project = self.project_repo.get_by_id(project_id)
         if not project:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Project not found"
-            )
+            raise ProjectNotFoundError(project_id)
         
         if not self.project_repo.is_member(project_id, user_id):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to this project"
-            )
+            raise ProjectAccessDeniedError()
+    
+    def _validate_assignment(self, project_id: int, assigned_to: Optional[int]) -> None:
+        """Valida se o usuário pode ser atribuído - DRY principle"""
+        if assigned_to is not None:
+            if not self.project_repo.is_member(project_id, assigned_to):
+                raise InvalidAssignmentError()
 
     def create_task(self, project_id: int, user_id: int, task_data: TaskCreate) -> Task:
+        """Cria uma nova tarefa"""
         self._check_project_access(project_id, user_id)
         
+        # Sanitizar inputs
+        title = InputSanitizer.sanitize_string(task_data.title)
+        description = InputSanitizer.sanitize_string(task_data.description or "")
+        
         return self.task_repo.create(
-            title=task_data.title,
-            description=task_data.description,
+            title=title,
+            description=description,
             priority=task_data.priority,
             project_id=project_id
         )
 
     def get_task(self, task_id: int, user_id: int) -> Task:
+        """Obtém uma tarefa com verificação de acesso"""
         task = self.task_repo.get_by_id(task_id)
         if not task:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Task not found"
-            )
+            raise TaskNotFoundError(task_id)
         
         self._check_project_access(task.project_id, user_id)
         return task
@@ -60,24 +90,30 @@ class TaskService:
         page: int = 1,
         size: int = 10
     ) -> Tuple[List[Task], int]:
+        """Lista tarefas do projeto com filtros e paginação"""
         self._check_project_access(project_id, user_id)
         return self.task_repo.get_project_tasks(project_id, status, page, size)
 
     def update_task(self, task_id: int, user_id: int, task_data: TaskUpdate) -> Task:
+        """Atualiza uma tarefa"""
         task = self.get_task(task_id, user_id)
         
-        # Check if assigned_to is a valid project member
+        # Validar atribuição se fornecida
         if task_data.assigned_to is not None:
-            if not self.project_repo.is_member(task.project_id, task_data.assigned_to):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Assigned user is not a member of the project"
-                )
+            self._validate_assignment(task.project_id, task_data.assigned_to)
         
         update_data = task_data.model_dump(exclude_unset=True)
+        
+        # Sanitizar inputs
+        if "title" in update_data:
+            update_data["title"] = InputSanitizer.sanitize_string(update_data["title"])
+        if "description" in update_data:
+            update_data["description"] = InputSanitizer.sanitize_string(update_data["description"])
+        
         return self.task_repo.update(task, **update_data)
 
     def update_task_status(self, task_id: int, user_id: int, status_data: TaskStatusUpdate) -> Task:
+        """Atualiza status da tarefa e registra no histórico"""
         task = self.get_task(task_id, user_id)
         
         old_status = task.status.value
@@ -87,7 +123,7 @@ class TaskService:
             # Update status
             task = self.task_repo.update(task, status=status_data.status)
             
-            # Record history
+            # Record history - Audit trail
             self.history_repo.create(
                 task_id=task_id,
                 action_type=ActionType.STATUS_CHANGE,
@@ -99,15 +135,11 @@ class TaskService:
         return task
 
     def update_task_assignment(self, task_id: int, user_id: int, assignment_data: TaskAssignmentUpdate) -> Task:
+        """Atualiza responsável da tarefa e registra no histórico"""
         task = self.get_task(task_id, user_id)
         
-        # Check if assigned_to is a valid project member
-        if assignment_data.assigned_to is not None:
-            if not self.project_repo.is_member(task.project_id, assignment_data.assigned_to):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Assigned user is not a member of the project"
-                )
+        # Validar atribuição
+        self._validate_assignment(task.project_id, assignment_data.assigned_to)
         
         old_assignee = str(task.assigned_to) if task.assigned_to else None
         new_assignee = str(assignment_data.assigned_to) if assignment_data.assigned_to else None
@@ -116,7 +148,7 @@ class TaskService:
             # Update assignment
             task = self.task_repo.update(task, assigned_to=assignment_data.assigned_to)
             
-            # Record history
+            # Record history - Audit trail
             self.history_repo.create(
                 task_id=task_id,
                 action_type=ActionType.ASSIGNMENT_CHANGE,
@@ -128,9 +160,11 @@ class TaskService:
         return task
 
     def delete_task(self, task_id: int, user_id: int) -> None:
+        """Deleta uma tarefa"""
         task = self.get_task(task_id, user_id)
         self.task_repo.delete(task)
 
     def get_task_history(self, task_id: int, user_id: int) -> List[TaskHistory]:
+        """Obtém histórico de alterações da tarefa"""
         task = self.get_task(task_id, user_id)
         return self.history_repo.get_task_history(task_id)

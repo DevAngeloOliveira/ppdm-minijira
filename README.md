@@ -38,16 +38,6 @@ O backend segue uma arquitetura em camadas com princípios **SOLID**:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Princípios SOLID Aplicados
-
-| Princípio | Implementação |
-|-----------|---------------|
-| **S** - Single Responsibility | Cada classe tem uma única responsabilidade (Services, Repositories, Validators) |
-| **O** - Open/Closed | Uso de interfaces/protocols para extensibilidade |
-| **L** - Liskov Substitution | Repositories implementam interfaces comuns |
-| **I** - Interface Segregation | Interfaces específicas em `core/interfaces.py` |
-| **D** - Dependency Inversion | Services dependem de abstrações, não implementações concretas |
-
 ## 📁 Estrutura do Backend
 
 ```
